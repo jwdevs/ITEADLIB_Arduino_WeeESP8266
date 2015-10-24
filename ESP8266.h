@@ -22,46 +22,64 @@
 #define __ESP8266_H__
 
 #include "Arduino.h"
+#include "Client.h"
+#include "IPAddress.h"
 
+#include "RingBuffer.h"
 
-//#define ESP8266_USE_SOFTWARE_SERIAL
-
-
-#ifdef ESP8266_USE_SOFTWARE_SERIAL
-#include "SoftwareSerial.h"
-#endif
-
+#define BUFFER RingBuffer<uint8_t, short, 128> 
 
 /**
  * Provide an easy-to-use way to manipulate ESP8266. 
  */
-class ESP8266 {
- public:
+class ESP8266: public Client {
+    
+public:
+ 
+    /*
+     * Constuctor. 
+     *
+     * @param uart - an reference of Stream object.
+     * @param baud - the buad rate to communicate with ESP8266(default:9600). 
+     *
+     * @warning parameter baud depends on the AT firmware. 9600 is an common value. 
+     */
+    ESP8266(Stream &uart);
 
-#ifdef ESP8266_USE_SOFTWARE_SERIAL
-    /*
-     * Constuctor. 
-     *
-     * @param uart - an reference of SoftwareSerial object. 
-     * @param baud - the buad rate to communicate with ESP8266(default:9600). 
-     *
-     * @warning parameter baud depends on the AT firmware. 9600 is an common value. 
+    //From Client class.
+    virtual int connect(IPAddress ip, uint16_t port);
+    virtual int connect(const char *host, uint16_t port);
+    virtual size_t write(uint8_t);
+    virtual size_t write(const uint8_t *buf, size_t size);
+    virtual int read() ;
+    virtual int read(uint8_t *buf, size_t size) ;
+    virtual void stop() ;
+    virtual uint8_t connected() ;
+    virtual operator bool() ;
+    
+    //using Print::write;
+
+    
+    /**
+     * Checks if bytes are available to be read. 
+     * @retval val > 0 - available
+     * @retval val = 0 - not available
      */
-    ESP8266(SoftwareSerial &uart, uint32_t baud = 9600);
-#else /* HardwareSerial */
-    /*
-     * Constuctor. 
-     *
-     * @param uart - an reference of HardwareSerial object. 
-     * @param baud - the buad rate to communicate with ESP8266(default:9600). 
-     *
-     * @warning parameter baud depends on the AT firmware. 9600 is an common value. 
+    virtual int available();
+    
+    /**
+     * Peeks the available byte
      */
-    ESP8266(HardwareSerial &uart, uint32_t baud = 9600);
-#endif
+    virtual int peek();
     
     
-    /** 
+    /**
+     * Flush the stream
+     */
+    
+    virtual void flush();
+    
+    /**
      * Verify ESP8266 whether live or not. 
      *
      * Actually, this method will send command "AT" to ESP8266 and waiting for "OK". 
@@ -369,23 +387,14 @@ class ESP8266 {
      */
     uint32_t recv(uint8_t mux_id, uint8_t *buffer, uint32_t buffer_size, uint32_t timeout = 1000);
     
-    /**
-     * Receive data from all of TCP or UDP builded already in multiple mode. 
-     *
-     * After return, coming_mux_id store the id of TCP or UDP from which data coming. 
-     * User should read the value of coming_mux_id and decide what next to do. 
-     * 
-     * @param coming_mux_id - the identifier of TCP or UDP. 
-     * @param buffer - the buffer for storing data. 
-     * @param buffer_size - the length of the buffer. 
-     * @param timeout - the time waiting data. 
-     * @return the length of data received actually. 
+   private:
+
+    /*
+     * Connect using string as address. 
      */
-    uint32_t recv(uint8_t *coming_mux_id, uint8_t *buffer, uint32_t buffer_size, uint32_t timeout = 1000);
+    int connect(String str, uint16_t port);
 
- private:
-
-    /* 
+    /*
      * Empty the buffer or UART RX.
      */
     void rx_empty(void);
@@ -425,8 +434,20 @@ class ESP8266 {
      * @param timeout - the duration waitting data comming.
      * @param coming_mux_id - in single connection mode, should be NULL and not NULL in multiple. 
      */
-    uint32_t recvPkg(uint8_t *buffer, uint32_t buffer_size, uint32_t *data_len, uint32_t timeout, uint8_t *coming_mux_id);
+    uint32_t recvInternal(uint8_t mux_id, uint8_t *buffer, uint32_t buffer_size, uint32_t timeout);
     
+    /*
+     * Stores the packages in internal buffers.
+     *
+     */
+    uint8_t  storePkg(uint32_t timeout = 1000);
+    
+    /* 
+     * Reads data from internal buffer and stores it to the client buffer.
+     *
+     */
+    uint32_t readFromBuffer(uint8_t mux_id, uint8_t *buffer, uint32_t buffer_size);
+        
     
     bool eAT(void);
     bool eATRST(void);
@@ -457,11 +478,15 @@ class ESP8266 {
      * +IPD,id,len:data
      */
     
-#ifdef ESP8266_USE_SOFTWARE_SERIAL
-    SoftwareSerial *m_puart; /* The UART to communicate with ESP8266 */
-#else
-    HardwareSerial *m_puart; /* The UART to communicate with ESP8266 */
-#endif
+    Stream  *m_puart; /* The UART to communicate with ESP8266 */
+    
+    /*
+     * Buffer for the data read as packages from ESP8266
+     * dataBuffers[5] - this is the buffer for the single mode.
+     */
+    BUFFER * dataBuffers[6];
+    
+
 };
 
 #endif /* #ifndef __ESP8266_H__ */
